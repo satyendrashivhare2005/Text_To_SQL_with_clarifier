@@ -92,8 +92,7 @@ def resolve_conversation_context(
 ) -> str:
     user_question = user_question.strip()
 
-    # Fast-path: If there is no chat history, the question is already the first turn
-    if not chat_history:
+    if not chat_history:   # Fast-path: If there is no chat history, the question is already the first turn
         return user_question
 
     llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
@@ -147,3 +146,4 @@ if __name__ == "__main__":
         print(f"\nRewritten Standalone Question:\n-> '{resolved}'")
     except Exception as e:
         print(f"\nExecution skipped or API key needed: {e}")
+

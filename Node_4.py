@@ -99,11 +99,8 @@ def clarification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     payload = format_clarification_request(spec)
     user_choices: Dict[str, str] = interrupt(payload)
 
-    # 3. Store user choices into state and QuerySpec
-    if isinstance(user_choices, dict):
-        if hasattr(spec, "resolved_choices"):
-            spec.resolved_choices.update(user_choices)
-
+    # Note: QuerySpec.resolved_choices is NOT populated here.
+    # Node 6 (Spec Resolver) will inspect state["user_choices"] and resolve it.
     return {
         **state,
         "query_spec": spec,

@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>End-to-End Text-to-SQL with Clarification Engine — Visual Pipeline Map</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #0b0d12;
+      --bg-panel: #11141d;
+      --bg-node: #151924;
+      --border-muted: #2a3042;
+      --cyan-glow: #38bdf8;
+      --indigo-glow: #6366f1;
+      --emerald-glow: #10b981;
+      --amber-glow: #f59e0b;
+      --rose-glow: #f43f5e;
+    }
+    body {
+      background-color: var(--bg-canvas);
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Subtle dot matrix background matching the uploaded reference image */
+    .dot-grid {
+      background-image: radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    /* Pill & Rounded Node Styling matching reference image */
+    .arch-node {
+      background: linear-gradient(180deg, rgba(24, 29, 42, 0.95) 0%, rgba(15, 18, 27, 0.98) 100%);
+      border: 1.5px solid #2e364d;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+      position: relative;
+    }
+    .arch-node:hover {
+      transform: translateY(-2px);
+      border-color: #60a5fa;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+    }
+    .arch-node.selected-node {
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35), 0 0 28px rgba(56, 189, 248, 0.35) !important;
+    }
+    .arch-node.active-step {
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.55) !important;
+    }
+    .arch-node.dimmed {
+      opacity: 0.22;
+      filter: grayscale(70%);
+    }
+    /* Layer-specific border accents */
+    .node-ui {
+      border-color: #60a5fa;
+      box-shadow: 0 0 14px rgba(96, 165, 250, 0.12);
+    }
+    .node-llm {
+      border-color: #6366f1;
+      background: linear-gradient(180deg, rgba(30, 35, 68, 0.92) 0%, rgba(19, 23, 46, 0.96) 100%);
+      box-shadow: 0 0 16px rgba(99, 102, 241, 0.16);
+    }
+    .node-guard {
+      border-color: #10b981;
+      background: linear-gradient(180deg, rgba(16, 48, 44, 0.9) 0%, rgba(12, 31, 29, 0.96) 100%);
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.14);
+    }
+    .node-sql {
+      border-color: #f59e0b;
+      background: linear-gradient(180deg, rgba(56, 36, 15, 0.9) 0%, rgba(36, 23, 10, 0.96) 100%);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.14);
+    }
+    .node-db {
+      border-color: #64748b;
+    }
+    /* Animated dotted connector lines */
+    @keyframes dashFlow {
+      to {
+        stroke-dashoffset: -24;
+      }
+    }
+    .flow-line {
+      stroke-dasharray: 4 5;
+      animation: dashFlow 1.2s linear infinite;
+    }
+    @keyframes pulseDot {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 0.95;
+      }
+      50% {
+        transform: scale(1.35);
+        opacity: 1;
+      }
+    }
+    .glow-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: #60a5fa;
+      box-shadow: 0 0 10px #60a5fa, 0 0 18px #38bdf8;
+      animation: pulseDot 1.4s ease-in-out infinite;
+    }
+    .badge-pill {
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid #334155;
+      border-radius: 9999px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      font-style: italic;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .badge-pill.active-pill {
+      border-color: #60a5fa;
+      color: #ffffff;
+      background: rgba(30, 58, 138, 0.65);
+      box-shadow: 0 0 14px rgba(59, 130, 246, 0.4);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-sky-500/30 selection:text-sky-200">
+
+  <!-- TOP HEADER & SIMULATION BAR -->
+  <header class="border-b border-slate-800/90 bg-[#0e1118]/95 backdrop-blur sticky top-0 z-30 px-4 py-3">
+    <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-3 h-3 rounded-full bg-sky-400 shadow-[0_0_12px_#38bdf8]"></div>
+        <div>
+          <h1 class="text-sm sm:text-base font-semibold tracking-tight text-white">
+            End-to-End Text-to-SQL with Clarification Engine — System &amp; 12-Node LangGraph Map
+          </h1>
+          <p class="text-xs text-slate-400 mono">
+            User Client ⇄ Streamlit UI ⇄ FastAPI (/query &amp; /resume) ⇄ 12-Node LangGraph Engine ⇄ MySQL 8.0 + ChromaDB
+          </p>
+        </div>
+      </div>
+
+      <!-- Flow Scenario Switcher & Playback Controls -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center bg-slate-900/90 border border-slate-700/80 rounded-lg p-1 text-xs">
+          <button id="btn-scenario-ambiguous" class="px-2.5 py-1 rounded-md font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 transition">
+            1. Ambiguous Query (Interrupt Loop)
+          </button>
+          <button id="btn-scenario-clean" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-slate-200 transition">
+            2. Clean Query (Pass-Through)
+          </button>
+          <button id="btn-scenario-retry" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-slate-200 transition">
+            3. SQL Error Self-Correction
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1">
+          <button id="btn-play-pause" class="px-3 py-1 rounded-md text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition flex items-center gap-1.5">
+            <span id="play-icon">▶</span> <span id="play-label">Simulate Flow</span>
+          </button>
+          <button id="btn-step" class="px-2.5 py-1 rounded-md text-xs font-medium text-slate-300 hover:bg-slate-800 transition">
+            Next Step →
+          </button>
+          <button id="btn-reset" class="px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- LIVE TRACE BANNER -->
+  <div class="bg-[#121621] border-b border-slate-800/80 px-4 py-2">
+    <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2.5">
+        <span class="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 mono font-medium" id="trace-step-badge">
+          STEP 0 / 16
+        </span>
+        <span class="text-slate-200 font-medium" id="trace-step-title">
+          Click "Simulate Flow" or click any node below to inspect how data moves from the User to MySQL and back.
+        </span>
+      </div>
+      <div class="text-slate-400 mono text-[11px]" id="trace-payload-preview">
+        Active Payload: {"question": "Show me top premium customers by revenue"}
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN WORKSPACE: VISUAL PIPELINE MAP + INSPECTOR DRAWER -->
+  <main class="flex-1 max-w-[1440px] w-full mx-auto p-3 sm:p-5 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+
+    <!-- LEFT/CENTER: VISUAL ARCHITECTURE CANVAS (9 COLS ON XL) -->
+    <section class="xl:col-span-8 dot-grid rounded-2xl border border-slate-800/90 bg-[#0b0d12] p-4 sm:p-6 shadow-2xl relative">
+
+      <!-- =================================================================== -->
+      <!-- TIER 1: CLIENT & API GATEWAY LAYER (Matches Reference Image Top Row) -->
+      <!-- =================================================================== -->
+      <div class="mb-3 flex items-center justify-between">
+        <span class="text-[11px] mono uppercase tracking-wider text-sky-400/90 font-semibold">
+          Tier 1 · Client Interface &amp; Stateless REST Gateway
+        </span>
+        <span class="text-[11px] mono text-slate-400 italic">
+          Session tracked via thread_id checkpoint
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-11 gap-2 items-center mb-6">
+        <!-- USER CLIENT NODE -->
+        <div id="node-user" data-node="user" data-layer="ui" class="arch-node node-ui md:col-span-3 rounded-[999px] px-4 py-3.5 text-center">
+          <div class="text-sm font-semibold text-white">User</div>
+          <div class="text-xs text-slate-400 mono italic">Client Browser</div>
+          <div class="mt-1.5 text-[10px] mono text-sky-300/90 bg-sky-950/50 border border-sky-800/50 rounded-full px-2 py-0.5 inline-block">
+            1. Asks Question / 2. Clicks Option
+          </div>
+        </div>
+
+        <!-- CONNECTOR: USER <-> STREAMLIT -->
+        <div class="md:col-span-1 flex flex-col items-center justify-center py-1">
+          <div id="pill-prompt" class="badge-pill">
+            <span class="glow-dot"></span> Prompt
+          </div>
+          <div class="text-[10px] text-slate-500 mono mt-0.5">⇄ UI Event</div>
+        </div>
+
+        <!-- STREAMLIT UI NODE -->
+        <div id="node-streamlit" data-node="streamlit" data-layer="ui" class="arch-node node-ui md:col-span-3 rounded-[28px] px-4 py-3.5 text-center">
+          <div class="text-sm font-semibold text-white">Streamlit</div>
+          <div class="text-xs text-slate-400 mono italic">UI Prototype</div>
+          <div class="mt-1.5 text-[10px] mono text-slate-300">
+            Chat + Clarification Buttons + DataFrame
+          </div>
+        </div>
+
+        <!-- CONNECTOR: STREAMLIT <-> FASTAPI -->
+        <div class="md:col-span-1 flex flex-col items-center justify-center py-1">
+          <div id="pill-rest" class="badge-pill active-pill">
+            <span class="glow-dot"></span> REST JSON
+          </div>
+          <div class="text-[10px] text-slate-400 mono mt-0.5">/query · /resume</div>
+        </div>
+
+        <!-- FASTAPI GATEWAY NODE -->
+        <div id="node-fastapi" data-node="fastapi" data-layer="api" class="arch-node node-ui md:col-span-3 rounded-[28px] px-4 py-3.5 text-center">
+          <div class="text-sm font-semibold text-white">FastAPI</div>
+          <div class="text-xs text-slate-400 mono italic">REST Gateway</div>
+          <div class="mt-1.5 text-[10px] mono text-sky-300">
+            POST /api/query &amp; POST /api/resume
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- CLOUD CONTAINER BOUNDARY BOX (Matches Reference Image Dashed Box)    -->
+      <!-- =================================================================== -->
+      <div class="rounded-2xl border-2 border-dashed border-slate-700/80 bg-[#0e121a]/70 p-4 sm:p-5 relative">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-2 border-b border-slate-800/80">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 text-xs mono font-semibold bg-sky-500 text-slate-950 rounded">Cloud</span>
+            <span class="text-xs sm:text-sm mono italic text-slate-300">
+              Container (AWS / Docker / Azure) — LangGraph 12-Node Stateful Engine (Nodes 0–11)
+            </span>
+          </div>
+          <span class="text-[11px] mono text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2.5 py-0.5 rounded-full">
+            Backbone State: QuerySpec (Pydantic)
+          </span>
+        </div>
+
+        <!-- SUB-PHASE A: NODES 0, 1, 2 (INGESTION, INTENT EXTRACTION & SCHEMA LINKING) -->
+        <div class="mb-2 text-[11px] mono text-indigo-400 font-semibold uppercase tracking-wider">
+          Phase A · Context Resolution, Slot Extraction &amp; Schema RAG (Nodes 0–2)
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <!-- NODE 0 -->
+          <div id="node-0" data-node="n0" data-layer="llm" class="arch-node node-llm rounded-xl p-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-indigo-300 mono">0. Context Loader</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 mono">LLM</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Resolves pronouns from prior turns (<em>"same filter"</em>, <em>"that table"</em>).
+            </p>
+            <div class="mt-2 text-[10px] mono text-indigo-200/80 bg-indigo-950/40 rounded px-2 py-1">
+              Out: standalone_question (str)
+            </div>
+          </div>
+
+          <!-- NODE 1 -->
+          <div id="node-1" data-node="n1" data-layer="llm" class="arch-node node-llm rounded-xl p-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-indigo-300 mono">1. Intent &amp; Slot Extractor</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 mono">LLM + Pydantic</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Extracts raw business words into <code class="text-sky-300">QuerySpec</code> without guessing columns.
+            </p>
+            <div class="mt-2 text-[10px] mono text-indigo-200/80 bg-indigo-950/40 rounded px-2 py-1">
+              Out: QuerySpec(metrics, entities, filters)
+            </div>
+          </div>
+
+          <!-- NODE 2 -->
+          <div id="node-2" data-node="n2" data-layer="guard" class="arch-node node-guard rounded-xl p-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-emerald-300 mono">2. Schema &amp; Value Linker</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 mono">Chroma + DB</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Retrieves top tables via ChromaDB &amp; checks MySQL <code class="text-emerald-300">LIKE</code> matches via SQLAlchemy.
+            </p>
+            <div class="mt-2 text-[10px] mono text-emerald-200/80 bg-emerald-950/40 rounded px-2 py-1">
+              Out: linked_tables + db_matches + DDL
+            </div>
+          </div>
+        </div>
+
+        <!-- SUB-PHASE B: NODES 3, 4, 5, 6 (DETERMINISTIC AMBIGUITY DETECTOR & INTERRUPT LOOP) -->
+        <div class="mb-2 text-[11px] mono text-emerald-400 font-semibold uppercase tracking-wider">
+          Phase B · Deterministic Ambiguity Detection &amp; LangGraph Interrupt Loop (Nodes 3–6)
+        </div>
+
+        <!-- NODE 3 CENTERPIECE -->
+        <div id="node-3" data-node="n3" data-layer="guard" class="arch-node node-guard rounded-xl p-3.5 mb-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs sm:text-sm font-bold text-emerald-300 mono">
+                3. Deterministic Ambiguity Detector — Pure Python + YAML Registry
+              </span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 mono border border-emerald-500/30">
+              Zero LLM Guessing · ambiguity_detector.py
+            </span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[10px] mono">
+            <div class="bg-slate-900/90 border border-emerald-800/50 rounded px-2 py-1 text-emerald-200">
+              1. COLUMN_COLLISION
+            </div>
+            <div class="bg-slate-900/90 border border-emerald-800/50 rounded px-2 py-1 text-emerald-200">
+              2. UNDEFINED_METRIC
+            </div>
+            <div class="bg-slate-900/90 border border-emerald-800/50 rounded px-2 py-1 text-emerald-200">
+              3. MISSING_FILTER
+            </div>
+            <div class="bg-slate-900/90 border border-emerald-800/50 rounded px-2 py-1 text-emerald-200">
+              4. VALUE_NOT_FOUND
+            </div>
+            <div class="bg-slate-900/90 border border-emerald-800/50 rounded px-2 py-1 text-emerald-200 col-span-2 sm:col-span-1">
+              5. MULTI_MATCHES
+            </div>
+          </div>
+        </div>
+
+        <!-- TWO BRANCHES FROM NODE 3: LEFT (AMBIGUOUS -> NODES 4 & 6) | RIGHT (CONFIDENT -> NODE 5) -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 mb-5 items-stretch">
+          <!-- LEFT BRANCH: AMBIGUOUS PATH (NODES 4 & 6) -->
+          <div class="md:col-span-7 rounded-xl border border-rose-500/30 bg-rose-950/10 p-3 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-[11px] mono text-rose-300 mb-2">
+              <span>↙ Branch A: Ambiguous (confidence &lt; 0.9)</span>
+              <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200">HITL Pause &amp; Resume</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <!-- NODE 4 -->
+              <div id="node-4" data-node="n4" data-layer="guard" class="arch-node node-guard rounded-lg p-2.5 border-rose-500/50">
+                <div class="text-xs font-bold text-rose-300 mono mb-1">4. Clarification Node</div>
+                <p class="text-[11px] text-slate-300 leading-snug">
+                  Calls <code class="text-rose-300">LangGraph interrupt()</code>. Freezes state &amp; sends typed options back via FastAPI to User UI.
+                </p>
+                <div class="mt-2 text-[10px] mono text-rose-200 bg-rose-950/50 rounded px-2 py-0.5">
+                  PAUSES → waits for /api/resume
+                </div>
+              </div>
+
+              <!-- NODE 6 -->
+              <div id="node-6" data-node="n6" data-layer="guard" class="arch-node node-guard rounded-lg p-2.5">
+                <div class="text-xs font-bold text-emerald-300 mono mb-1">6. Spec Resolver</div>
+                <p class="text-[11px] text-slate-300 leading-snug">
+                  Triggered by <code class="text-sky-300">Command(resume=choice)</code>. Merges user choice into <code class="text-emerald-300">QuerySpec.resolved_choices</code>.
+                </p>
+                <div class="mt-2 text-[10px] mono text-emerald-200 bg-emerald-950/50 rounded px-2 py-0.5">
+                  Re-verifies with Node 3 → Node 7
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT BRANCH: PASS-THROUGH (NODE 5) -->
+          <div class="md:col-span-5 rounded-xl border border-emerald-500/30 bg-emerald-950/10 p-3 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-[11px] mono text-emerald-300 mb-2">
+              <span>↘ Branch B: Confident (&gt; 0.9)</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200">Fast Path</span>
+            </div>
+
+            <div id="node-5" data-node="n5" data-layer="guard" class="arch-node node-guard rounded-lg p-3 flex-1 flex flex-col justify-center">
+              <div class="text-xs font-bold text-emerald-300 mono mb-1">5. Pass-Through Node</div>
+              <p class="text-[11px] text-slate-300 leading-snug">
+                <code class="text-emerald-300">QuerySpec</code> has zero unresolved ambiguities. Skips user wait and routes straight to SQL Generator.
+              </p>
+              <div class="mt-2 text-[10px] mono text-emerald-200 bg-emerald-950/50 rounded px-2 py-0.5 inline-block">
+                Zero Latency Overhead
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUB-PHASE C: NODES 7, 8, 9, 10, 11 (SQL GENERATION, AST/EXPLAIN GATES, EXECUTION & EXPLAINER) -->
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <span class="text-[11px] mono text-amber-400 font-semibold uppercase tracking-wider">
+            Phase C · MySQL Generation, Safety Gates, Self-Correction &amp; Response (Nodes 7–11)
+          </span>
+          <span class="text-[10px] mono text-amber-300 bg-amber-950/50 border border-amber-800/50 px-2 py-0.5 rounded-full">
+            ↻ Retry Loop (Nodes 8 / 9 / 10 → Node 7, Max 3 Retries)
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 mb-4">
+          <!-- NODE 7 -->
+          <div id="node-7" data-node="n7" data-layer="llm" class="arch-node node-sql rounded-xl p-2.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-amber-300 mono">7. SQL Generator</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/30 text-indigo-200 mono">LLM</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Takes resolved <code class="text-amber-200">QuerySpec</code> + pruned DDL + 5 sample rows → writes MySQL 8.0 query.
+            </p>
+          </div>
+
+          <!-- NODE 8 -->
+          <div id="node-8" data-node="n8" data-layer="guard" class="arch-node node-sql rounded-xl p-2.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-amber-300 mono">8. SQLGlot AST</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 mono">AST Gate</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Parses MySQL AST. Blocks <code class="text-rose-300">DROP/UPDATE</code> &amp; checks <code class="text-amber-200">JOIN ON</code> conditions.
+            </p>
+          </div>
+
+          <!-- NODE 9 -->
+          <div id="node-9" data-node="n9" data-layer="guard" class="arch-node node-sql rounded-xl p-2.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-amber-300 mono">9. Safety Gate</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 mono">EXPLAIN</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Runs <code class="text-amber-200">EXPLAIN</code> plan. Detects full-table scans &amp; auto-injects <code class="text-amber-200">LIMIT</code>.
+            </p>
+          </div>
+
+          <!-- NODE 10 -->
+          <div id="node-10" data-node="n10" data-layer="api" class="arch-node node-sql rounded-xl p-2.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-amber-300 mono">10. Safe Execution</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 mono">MySQL Pool</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Executes on read-only SQLAlchemy pool. On DB error → feeds traceback to Node 7.
+            </p>
+          </div>
+
+          <!-- NODE 11 -->
+          <div id="node-11" data-node="n11" data-layer="llm" class="arch-node node-guard rounded-xl p-2.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-emerald-300 mono">11. Explainer</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/30 text-indigo-200 mono">LLM</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">
+              Formats table + explains applied choices (<em>"Filtered to net revenue as chosen"</em>) → FastAPI → UI.
+            </p>
+          </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- TIER 3: EXTERNAL DATA STORES & AI PROVIDERS (Bottom Connected Row)  -->
+        <!-- =================================================================== -->
+        <div class="pt-3 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <!-- CHROMA DB -->
+          <div id="node-chroma" data-node="chroma" data-layer="api" class="arch-node node-db rounded-[22px] p-2.5 text-center">
+            <div class="text-xs font-semibold text-white">ChromaDB</div>
+            <div class="text-[10px] text-slate-400 mono italic">Vector Schema Store</div>
+            <div class="mt-1 text-[10px] mono text-emerald-300">Connected to Node 2</div>
+          </div>
+
+          <!-- YAML SEMANTIC REGISTRY -->
+          <div id="node-yaml" data-node="yaml" data-layer="guard" class="arch-node node-db rounded-[22px] p-2.5 text-center">
+            <div class="text-xs font-semibold text-white">YAML Registry</div>
+            <div class="text-[10px] text-slate-400 mono italic">semantic_registry.yaml</div>
+            <div class="mt-1 text-[10px] mono text-emerald-300">Connected to Nodes 2, 3, 6</div>
+          </div>
+
+          <!-- LLM PROVIDER -->
+          <div id="node-llm" data-node="llm" data-layer="llm" class="arch-node node-db rounded-[22px] p-2.5 text-center">
+            <div class="text-xs font-semibold text-white">LLM Provider</div>
+            <div class="text-[10px] text-slate-400 mono italic">OpenAI / Gemini / Claude</div>
+            <div class="mt-1 text-[10px] mono text-indigo-300">Connected to Nodes 0, 1, 7, 11</div>
+          </div>
+
+          <!-- MYSQL DB -->
+          <div id="node-mysql" data-node="mysql" data-layer="api" class="arch-node node-db rounded-[22px] p-2.5 text-center">
+            <div class="text-xs font-semibold text-white">MySQL 8.0 DB</div>
+            <div class="text-[10px] text-slate-400 mono italic">SQLAlchemy Read-Only Pool</div>
+            <div class="mt-1 text-[10px] mono text-amber-300">Connected to Nodes 2, 9, 10</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- =================================================================== -->
+      <!-- BOTTOM FILTER LEGEND BAR (Matches Reference Image Checkboxes)       -->
+      <!-- =================================================================== -->
+      <div class="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs mono">
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+            <input type="checkbox" id="filter-ui" checked class="w-3.5 h-3.5 rounded accent-sky-400" />
+            <span class="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block"></span>
+            Client UI
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+            <input type="checkbox" id="filter-api" checked class="w-3.5 h-3.5 rounded accent-amber-400" />
+            <span class="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block"></span>
+            API / Database (FastAPI &amp; MySQL)
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+            <input type="checkbox" id="filter-llm" checked class="w-3.5 h-3.5 rounded accent-indigo-500" />
+            <span class="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block"></span>
+            AI Engine / LLM Nodes (0, 1, 7, 11)
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+            <input type="checkbox" id="filter-guard" checked class="w-3.5 h-3.5 rounded accent-emerald-400" />
+            <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span>
+            Deterministic Guardrails (2, 3, 4, 5, 6, 8, 9)
+          </label>
+        </div>
+        <span class="text-[11px] text-slate-400">
+          Tip: Click any node card to inspect its code file, payload &amp; interview pitch →
+        </span>
+      </div>
+    </section>
+
+    <!-- RIGHT: INTERACTIVE NODE INSPECTOR & END-TO-END RETURN JOURNEY (4 COLS ON XL) -->
+    <aside class="xl:col-span-4 flex flex-col gap-4">
+
+      <!-- NODE INSPECTOR CARD -->
+      <div class="rounded-2xl border border-slate-800 bg-[#11141d] p-4 sm:p-5 shadow-xl">
+        <div class="flex items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800">
+          <div>
+            <span id="insp-badge" class="text-[10px] mono uppercase px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+              NODE INSPECTOR
+            </span>
+            <h2 id="insp-title" class="text-base font-bold text-white mt-1">
+              3. Deterministic Ambiguity Detector
+            </h2>
+          </div>
+          <span id="insp-file" class="text-xs mono text-emerald-300 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-lg">
+            ambiguity_detector.py
+          </span>
+        </div>
+
+        <p id="insp-desc" class="text-xs text-slate-300 leading-relaxed mb-4">
+          Pure Python rule engine that inspects the extracted QuerySpec against semantic_registry.yaml. Catches column collisions, undefined metrics, missing date filters on large tables, and unmapped entity values without relying on LLM guessing.
+        </p>
+
+        <div class="space-y-3 text-xs">
+          <div>
+            <div class="text-[11px] mono text-slate-400 uppercase mb-1">Input Payload</div>
+            <pre id="insp-input" class="mono text-[11px] bg-[#0b0d12] border border-slate-800 rounded-lg p-2.5 text-sky-200 overflow-x-auto whitespace-pre-wrap">QuerySpec(metrics=["revenue"], entities=["customers"], filters=[customer_tier="premium"], time_window=None)</pre>
+          </div>
+
+          <div>
+            <div class="text-[11px] mono text-slate-400 uppercase mb-1">Output / State Transition</div>
+            <pre id="insp-output" class="mono text-[11px] bg-[#0b0d12] border border-slate-800 rounded-lg p-2.5 text-emerald-300 overflow-x-auto whitespace-pre-wrap">confidence_score = 0.25
+detected_ambiguities = [
+  COLUMN_COLLISION("revenue"),
+  MISSING_FILTER("orders"),
+  MULTIPLE_INTERPRETATIONS("premium")
+] → Routes to Node 4 (interrupt)</pre>
+          </div>
+
+          <div class="rounded-xl bg-indigo-950/30 border border-indigo-800/50 p-3">
+            <div class="text-[11px] mono text-indigo-300 font-semibold mb-1">
+              💬 What to Say in Your Accenture Interview
+            </div>
+            <p id="insp-interview" class="text-xs text-slate-200 italic leading-relaxed">
+              "Instead of hoping an LLM notices vague phrasing, Node 3 evaluates the extracted QuerySpec deterministically against a YAML business glossary—guaranteeing 100% recall on corporate metric collisions."
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROUND-TRIP SUMMARY CARD: HOW DATA REACHES BACK TO THE USER -->
+      <div class="rounded-2xl border border-slate-800 bg-[#11141d] p-4 sm:p-5 shadow-xl">
+        <h3 class="text-sm font-bold text-white mb-2.5 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          The 2 Round-Trips Back to the User
+        </h3>
+        <div class="space-y-2.5 text-xs text-slate-300">
+          <div class="p-2.5 rounded-lg bg-rose-950/20 border border-rose-500/30">
+            <div class="font-semibold text-rose-300 mono text-[11px] mb-1">
+              Round-Trip 1: When Ambiguous (Pause &amp; Clarify)
+            </div>
+            <p class="leading-relaxed">
+              <strong>Node 4</strong> calls <code class="text-rose-200">interrupt()</code> → <strong>FastAPI</strong> catches the paused checkpoint and returns <code class="text-rose-200">status: "NEEDS_CLARIFICATION"</code> → <strong>Streamlit</strong> renders clickable option buttons to the <strong>User</strong> → User clicks an option → <strong>Streamlit</strong> calls <code class="text-sky-300">POST /api/resume</code> → <strong>FastAPI</strong> wakes the graph at <strong>Node 6</strong>.
+            </p>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30">
+            <div class="font-semibold text-emerald-300 mono text-[11px] mb-1">
+              Round-Trip 2: Final Answer &amp; Table Delivery
+            </div>
+            <p class="leading-relaxed">
+              <strong>Node 10</strong> executes the validated MySQL query → <strong>Node 11</strong> generates the natural-language explanation + table → <strong>FastAPI</strong> returns <code class="text-emerald-200">status: "COMPLETED"</code> JSON → <strong>Streamlit</strong> displays the explanation banner, interactive DataFrame, and expandable SQL code block to the <strong>User</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script>
+    // Complete Node Metadata Dictionary for Interactive Inspection
+    const NODE_DETAILS = {
+      user: {
+        badge: "CLIENT TIER",
+        title: "User (Client Browser)",
+        file: "Browser Session",
+        desc: "The business analyst or stakeholder asking natural-language questions (e.g., 'Show me top premium customers by revenue') and clicking clarification option pills when prompted.",
+        input: "Natural language question typed in chat input.",
+        output: "1. Initial question string\n2. Selected clarification option (if interrupted)\n3. Views final SQL data table & explanation.",
+        interview: "Business users rarely specify exact column names like gross_amount vs net_amount. Designing the UX around quick-reply clarification pills turns an ambiguous question into a verified query in one click."
+      },
+      streamlit: {
+        badge: "FRONTEND UI",
+        title: "Streamlit Chat & DataFrame UI",
+        file: "app.py",
+        desc: "Renders the conversational chat interface, stores the user's `thread_id` in `st.session_state`, displays dynamic multiple-choice buttons when `status == 'NEEDS_CLARIFICATION'`, and renders the final Pandas DataFrame.",
+        input: "User prompt or button click + FastAPI JSON response.",
+        output: "HTTP POST to FastAPI `/api/query` or `/api/resume` with `{thread_id, question / selected_choice}`.",
+        interview: "Streamlit keeps `thread_id` in session state so every follow-up turn or clarification click maps back to the exact paused LangGraph checkpoint in FastAPI."
+      },
+      fastapi: {
+        badge: "REST API GATEWAY",
+        title: "FastAPI Stateless-to-Stateful Bridge",
+        file: "server.py",
+        desc: "Exposes `POST /api/query` (starts graph execution) and `POST /api/resume` (resumes paused checkpoints via `Command(resume=choice)`). Translates stateful LangGraph checkpoints into clean REST JSON responses.",
+        input: "JSON request `{thread_id: 'sess_101', question: '...'}` or `{thread_id: 'sess_101', selected_choice: 'net_revenue'}`.",
+        output: "JSON response with `status: 'NEEDS_CLARIFICATION' | 'COMPLETED'`, clarification options, or final SQL rows.",
+        interview: "Because HTTP is stateless while LangGraph interrupts are stateful, FastAPI acts as the gateway that inspects `graph.get_state(config)` and routes resume commands by `thread_id`."
+      },
+      n0: {
+        badge: "LANGGRAPH NODE 0 · LLM",
+        title: "0. Conversation Context Loader",
+        file: "context_loader.py",
+        desc: "Resolves conversational pronouns and ellipsis from earlier turns ('what about last year?', 'apply the same filter to orders') into a self-contained question without inventing columns.",
+        input: "Prior chat history + latest raw user message.",
+        output: "Standalone, self-contained natural language question string.",
+        interview: "Decoupling coreference resolution into Node 0 ensures Node 1 always parses a clean, standalone sentence without carrying noisy multi-turn chat history into downstream nodes."
+      },
+      n1: {
+        badge: "LANGGRAPH NODE 1 · LLM + PYDANTIC",
+        title: "1. Intent & Slot Extractor",
+        file: "intent_extractor.py + queryspec.py",
+        desc: "Uses `llm.with_structured_output(QuerySpec)` to extract the user's raw metrics, entities, filters, groupings, and time window into a schema-agnostic Pydantic object.",
+        input: "Standalone question: 'Show me top premium customers by revenue'",
+        output: "QuerySpec(\n  metrics=['revenue'],\n  entities=['customers'],\n  filters=[FilterCondition(field='customer_tier', value='premium')],\n  time_window=None\n)",
+        interview: "We intentionally withhold the database DDL from Node 1 so the LLM extracts the raw business word 'revenue' instead of silently guessing 'orders.gross_amount'."
+      },
+      n2: {
+        badge: "LANGGRAPH NODE 2 · CHROMA + SQLALCHEMY",
+        title: "2. Schema & Value Linker",
+        file: "schema_linker.py",
+        desc: "Queries ChromaDB embeddings to retrieve the top relevant tables (excluding distractors like `audit_logs`), runs parameterized MySQL `LIKE` queries to check if filter values exist in the DB, and prunes the DDL.",
+        input: "QuerySpec from Node 1 + DEFAULT_TABLE_CATALOG.",
+        output: "linked_tables = ['customers', 'orders']\ndb_lookup_results = {'company_name': ['Acme Corp NA', 'Acme Global Ltd']}\nlinked_schema_ddl = 'CREATE TABLE customers ...'",
+        interview: "Node 2 combines ChromaDB vector retrieval for table pruning with live SQLAlchemy `LIKE` lookups so Node 3 knows whether an entity filter matches 0, 1, or multiple database rows."
+      },
+      n3: {
+        badge: "LANGGRAPH NODE 3 · PURE PYTHON",
+        title: "3. Deterministic Ambiguity Detector",
+        file: "ambiguity_detector.py",
+        desc: "Pure Python rule engine that checks `QuerySpec` against `semantic_registry.yaml`. Detects 5 ambiguity classes: COLUMN_COLLISION, UNDEFINED_METRIC, MISSING_FILTER, VALUE_NOT_FOUND, and MULTIPLE_INTERPRETATIONS.",
+        input: "QuerySpec + linked_tables + db_lookup_results + semantic_registry.yaml",
+        output: "If ambiguous: confidence_score = 0.25, detected_ambiguities = [...] → Node 4\nIf clear: confidence_score = 1.0 → Node 5",
+        interview: "Instead of hoping an LLM notices vague phrasing, Node 3 evaluates the extracted QuerySpec deterministically against a YAML business glossary—guaranteeing 100% precision on corporate metric collisions."
+      },
+      n4: {
+        badge: "LANGGRAPH NODE 4 · HITL INTERRUPT",
+        title: "4. Clarification Node (LangGraph Interrupt)",
+        file: "clarification_node.py",
+        desc: "Formats the detected ambiguity flags into user-friendly multiple-choice options and calls `langgraph.types.interrupt()`. Freezes graph state in the checkpointer and returns control to FastAPI → Streamlit → User.",
+        input: "detected_ambiguities list from Node 3.",
+        output: "LangGraph Interrupt Payload sent to FastAPI -> Streamlit UI:\n'How would you like to calculate revenue? [Gross Revenue | Net Revenue | Collected Cash]'",
+        interview: "Using LangGraph's native `interrupt()` lets us pause the Python call stack mid-execution, persist state to SQLite/Postgres, and wait asynchronously for the user's HTTP resume request."
+      },
+      n5: {
+        badge: "LANGGRAPH NODE 5 · FAST PATH",
+        title: "5. Pass-Through Node",
+        file: "pipeline_graph.py",
+        desc: "Zero-latency routing path taken when `confidence_score > 0.9` (zero ambiguities detected). Bypasses human clarification and routes directly to Node 7 (SQL Generator).",
+        input: "Validated, unambiguous QuerySpec (confidence_score = 1.0).",
+        output: "Direct state transition to Node 7 with zero user wait.",
+        interview: "On the Yale Spider benchmark where queries are already specific, 95% of queries take Node 5's pass-through path with zero extra latency."
+      },
+      n6: {
+        badge: "LANGGRAPH NODE 6 · STATE MERGER",
+        title: "6. Spec Resolver",
+        file: "spec_resolver.py",
+        desc: "Wakes up when FastAPI calls `Command(resume=user_choice)`. Merges the user's selected SQL definition into `QuerySpec.resolved_choices` and loops back through Node 3 to verify all ambiguities are cleared.",
+        input: "Paused QuerySpec + user resume payload (e.g., `{'revenue': 'net_revenue', 'orders_date_filter': 'last_30_days'}`).",
+        output: "Updated QuerySpec with `resolved_choices` populated → re-checked by Node 3 → routed to Node 7.",
+        interview: "Routing Node 6 back through Node 3 guarantees that even if a user replies with free text that introduces a new filter, the updated QuerySpec is 100% verified before SQL generation."
+      },
+      n7: {
+        badge: "LANGGRAPH NODE 7 · LLM SQL WRITER",
+        title: "7. MySQL 8.0 Generator",
+        file: "sql_generator.py",
+        desc: "Prompts the LLM with the fully resolved `QuerySpec`, the pruned `CREATE TABLE` DDL from Node 2, canonical join paths, and 5 sample rows. Also accepts `failed_sql` + `error_msg` during self-correction retries.",
+        input: "Resolved QuerySpec + linked_schema_ddl + canonical_joins (+ optional retry error traceback).",
+        output: "Raw MySQL 8.0 SELECT query string.",
+        interview: "Because all metric formulas and date columns are already locked in by Node 6, Node 7's LLM prompt only has to focus on clean MySQL 8.0 syntax and canonical joins."
+      },
+      n8: {
+        badge: "LANGGRAPH NODE 8 · AST GUARDRAIL",
+        title: "8. SQLGlot AST Validator",
+        file: "sql_validator.py",
+        desc: "Parses the generated SQL into an Abstract Syntax Tree using `sqlglot.parse_one(sql, read='mysql')`. Rejects any non-SELECT statements (`DROP`, `UPDATE`, `DELETE`) and verifies every `JOIN` has an explicit `ON` condition.",
+        input: "Raw SQL string from Node 7 + schema column dictionary.",
+        output: "Valid AST → Node 9 | Invalid AST → loops back to Node 7 with exact syntax/column error.",
+        interview: "SQLGlot catches hallucinated column names and accidental Cartesian joins in Python microseconds before the query ever touches the MySQL server."
+      },
+      n9: {
+        badge: "LANGGRAPH NODE 9 · COST GUARDRAIL",
+        title: "9. Query Safety Gate (MySQL EXPLAIN)",
+        file: "safety_gate.py",
+        desc: "Runs `EXPLAIN FORMAT=JSON` on MySQL 8.0 to inspect the query optimizer's estimated row count and index usage. Auto-injects a `LIMIT 100` via SQLGlot or rejects unindexed full-table scans on million-row tables.",
+        input: "AST-validated MySQL query from Node 8.",
+        output: "Cost-verified SQL query → Node 10 (or loops back to Node 7 if full-table scan exceeds threshold).",
+        interview: "Running `EXPLAIN` as a pre-execution gate prevents an LLM-generated query from accidentally locking a 10-million-row production table."
+      },
+      n10: {
+        badge: "LANGGRAPH NODE 10 · DB EXECUTION",
+        title: "10. Safe Execution + Self-Correction Loop",
+        file: "sql_executor.py",
+        desc: "Executes the validated SQL on a read-only SQLAlchemy connection pool with a 5-second timeout. If MySQL raises a runtime error, routes `(failed_sql, error_msg)` back to Node 7 for up to 3 automatic repair retries.",
+        input: "Safety-cleared MySQL query.",
+        output: "Raw `ResultSet` rows + column headers → Node 11 (or retry loop → Node 7).",
+        interview: "Capping the self-correction loop at 3 retries recovers from minor MySQL dialect quirks (like ONLY_FULL_GROUP_BY) while preventing infinite token loops."
+      },
+      n11: {
+        badge: "LANGGRAPH NODE 11 · EXPLAINER",
+        title: "11. Result Formatter + Explainer",
+        file: "result_formatter.py",
+        desc: "Converts the raw MySQL rows into a structured table + natural-language summary, explicitly confirming the user's clarification choices ('Calculated using Net Revenue and excluded cancelled orders').",
+        input: "Raw ResultSet + QuerySpec.resolved_choices + QuerySpec.assumptions_made.",
+        output: "Final response payload returned via FastAPI → Streamlit UI → User.",
+        interview: "Explicitly stating which column definitions and safe defaults were used builds user trust and logs `clarification_rate` for our evaluation harness."
+      },
+      chroma: {
+        badge: "EXTERNAL VECTOR STORE",
+        title: "ChromaDB Schema Catalog",
+        file: "schema_linker.py",
+        desc: "Stores vector embeddings of each table's `embedding_text`, `synonyms`, and column descriptions so Node 2 can retrieve the top-K relevant tables for any user question.",
+        input: "Embedded query terms from QuerySpec.",
+        output: "Top-K matching table names (`['customers', 'orders']`).",
+        interview: "Indexing natural-language domain descriptions in ChromaDB prevents prompt bloat when scaling from 5 tables to 200 enterprise tables."
+      },
+      yaml: {
+        badge: "REUSABLE CONFIG ASSET",
+        title: "YAML Semantic Registry",
+        file: "semantic_registry.yaml",
+        desc: "Declarative configuration file mapping business terms ('revenue', 'active', 'top') to competing SQL expressions, mandatory table filters, entity lookup queries, and canonical joins.",
+        input: "Loaded at startup by Node 2, Node 3, and Node 6.",
+        output: "Deterministic ambiguity rules and SQL expression mappings.",
+        interview: "Keeping domain rules in `semantic_registry.yaml` makes the Python engine a reusable consulting asset—onboarding a new client database only requires swapping the YAML file."
+      },
+      llm: {
+        badge: "AI MODEL PROVIDER",
+        title: "LLM API (OpenAI / Gemini)",
+        file: "pipeline_graph.py",
+        desc: "Powers the 4 linguistic nodes in the pipeline: Node 0 (pronoun rewrite), Node 1 (Pydantic slot extraction), Node 7 (MySQL 8.0 generation), and Node 11 (result explanation).",
+        input: "Structured prompts from Nodes 0, 1, 7, and 11.",
+        output: "Pydantic `QuerySpec`, MySQL query string, and natural-language summary.",
+        interview: "By restricting the LLM to 4 well-scoped nodes and surrounding it with 8 deterministic Python/AST/SQL nodes, we get fluency without hallucination."
+      },
+      mysql: {
+        badge: "RELATIONAL DATABASE",
+        title: "MySQL 8.0 Database (SQLAlchemy Pool)",
+        file: "schema_linker.py + sql_executor.py",
+        desc: "Hosts the target relational data. Accessed via a read-only SQLAlchemy engine across Node 2 (`LIKE` entity checks & `SHOW CREATE TABLE`), Node 9 (`EXPLAIN`), and Node 10 (`SELECT` execution).",
+        input: "Parameterized lookup queries, `EXPLAIN` plans, and validated `SELECT` statements.",
+        output: "Matched entity strings, execution plans, and final result rows.",
+        interview: "Using SQLAlchemy with `pool_pre_ping=True` and a read-only database user enforces defense-in-depth at the database connection layer."
+      }
+    };
+
+    // Simulation Step Sequences for the 3 Scenarios
+    const SCENARIOS = {
+      ambiguous: [
+        { node: "user", title: "User types vague query: 'Show me top premium customers by revenue'", payload: '{"question": "Show me top premium customers by revenue"}' },
+        { node: "streamlit", title: "Streamlit UI sends HTTP POST /api/query with thread_id='sess_01'", payload: 'POST /api/query {"thread_id": "sess_01", "question": "..."}' },
+        { node: "fastapi", title: "FastAPI invokes compiled LangGraph pipeline for thread_id='sess_01'", payload: 'compiled_graph.invoke({"raw_question": "..."}, config)' },
+        { node: "n0", title: "Node 0 (Context Loader) verifies standalone question from chat history", payload: 'standalone_question = "Show me top premium customers by revenue"' },
+        { node: "n1", title: "Node 1 (Intent Extractor) extracts raw slots into Pydantic QuerySpec", payload: 'QuerySpec(metrics=["revenue"], filters=[tier="premium"], time_window=None)' },
+        { node: "n2", title: "Node 2 (Schema Linker) queries ChromaDB & MySQL -> links ['customers', 'orders']", payload: 'linked_tables = ["customers", "orders"], DDL pruned' },
+        { node: "n3", title: "Node 3 (Ambiguity Detector) catches 3 ambiguities in semantic_registry.yaml!", payload: 'Flags: COLUMN_COLLISION(revenue), MISSING_FILTER(orders), MULTI(premium)' },
+        { node: "n4", title: "Node 4 calls LangGraph interrupt() -> pauses graph & saves checkpoint!", payload: 'interrupt({"clarifications": [...]}) -> PAUSED' },
+        { node: "fastapi", title: "FastAPI catches interrupt and returns NEEDS_CLARIFICATION JSON to UI", payload: '{"status": "NEEDS_CLARIFICATION", "options": ["Gross", "Net", "Last 30d"]}' },
+        { node: "streamlit", title: "Streamlit renders clickable clarification option pills to the User", payload: 'UI renders buttons: [Net Revenue] [Last 30 Days] [Enterprise Tier]' },
+        { node: "user", title: "User clicks: 'Net Revenue', 'Last 30 Days', and 'Enterprise'", payload: 'User selection event -> POST /api/resume' },
+        { node: "fastapi", title: "FastAPI calls Command(resume=user_choice) on paused thread_id='sess_01'", payload: 'compiled_graph.invoke(Command(resume=choices), config)' },
+        { node: "n6", title: "Node 6 (Spec Resolver) merges user choices into QuerySpec.resolved_choices", payload: 'resolved_choices = {"revenue": "net_revenue", "orders_date": "last_30d"}' },
+        { node: "n3", title: "Node 3 re-checks updated QuerySpec -> 0 ambiguities remain (confidence = 1.0)!", payload: 'confidence_score = 1.0 -> Routes to Node 5 (Pass-Through)' },
+        { node: "n5", title: "Node 5 (Pass-Through) routes resolved QuerySpec straight to SQL Generator", payload: 'Pass-through -> Node 7' },
+        { node: "n7", title: "Node 7 (SQL Generator) writes MySQL 8.0 query using resolved net_revenue formula", payload: 'SELECT c.company_name, SUM(o.gross_amount - o.discount_amount) AS net_rev ...' },
+        { node: "n8", title: "Node 8 (SQLGlot AST Validator) verifies SELECT-only & valid JOIN ON clauses", payload: 'sqlglot.parse_one(sql, read="mysql") -> VALID AST' },
+        { node: "n9", title: "Node 9 (Safety Gate) runs MySQL EXPLAIN -> index used, estimated rows = 420", payload: 'EXPLAIN FORMAT=JSON -> rows: 420 < 50,000 threshold (SAFE)' },
+        { node: "n10", title: "Node 10 (Safe Execution) runs query on read-only MySQL pool -> returns 5 rows", payload: 'ResultSet: 5 rows returned in 14ms' },
+        { node: "n11", title: "Node 11 (Explainer) formats table + confirms 'Filtered to Net Revenue as chosen'", payload: 'Summary + Table + Assumptions -> FastAPI -> Streamlit -> User!' }
+      ],
+      clean: [
+        { node: "user", title: "User asks specific query: 'Top 5 Enterprise customers by gross revenue in Sept 2026'", payload: '{"question": "Top 5 Enterprise customers by gross revenue in Sept 2026"}' },
+        { node: "streamlit", title: "Streamlit forwards request to FastAPI POST /api/query", payload: 'POST /api/query {"thread_id": "sess_02"}' },
+        { node: "fastapi", title: "FastAPI starts LangGraph execution", payload: 'compiled_graph.invoke(...)' },
+        { node: "n0", title: "Node 0 outputs standalone question", payload: 'standalone_question = "Top 5 Enterprise customers by gross revenue in Sept 2026"' },
+        { node: "n1", title: "Node 1 extracts explicit slots into QuerySpec", payload: 'QuerySpec(metrics=["orders.gross_amount"], tier="Enterprise", time="Sept 2026")' },
+        { node: "n2", title: "Node 2 links ['customers', 'orders'] via ChromaDB", payload: 'linked_tables = ["customers", "orders"]' },
+        { node: "n3", title: "Node 3 finds 0 ambiguities! Confidence = 1.0 (skips Node 4 interrupt)", payload: 'detected_ambiguities = [] -> Routes to Node 5' },
+        { node: "n5", title: "Node 5 (Pass-Through) skips user wait and routes directly to Node 7", payload: 'Zero user interruption' },
+        { node: "n7", title: "Node 7 generates MySQL 8.0 query", payload: 'SELECT c.company_name, SUM(o.gross_amount) ...' },
+        { node: "n8", title: "Node 8 validates MySQL AST via SQLGlot", payload: 'AST Validated' },
+        { node: "n9", title: "Node 9 verifies MySQL EXPLAIN cost plan", payload: 'EXPLAIN passed' },
+        { node: "n10", title: "Node 10 executes SQL on MySQL 8.0 read-only pool", payload: '5 rows fetched' },
+        { node: "n11", title: "Node 11 formats result table & sends back via FastAPI -> Streamlit -> User", payload: 'Completed in single round-trip!' }
+      ],
+      retry: [
+        { node: "n7", title: "Node 7 generates initial MySQL draft with a missing JOIN ON condition", payload: 'SELECT c.company_name, SUM(o.gross_amount) FROM customers c JOIN orders o;' },
+        { node: "n8", title: "Node 8 (SQLGlot AST) catches missing JOIN ON clause! Loops back to Node 7 (Retry 1/3)", payload: 'AST Error: JOIN on table `orders` missing ON condition -> Back to Node 7' },
+        { node: "n7", title: "Node 7 repairs SQL using <previous_attempt_error> prompt block", payload: '... FROM customers c INNER JOIN orders o ON c.customer_id = o.customer_id ...' },
+        { node: "n8", title: "Node 8 passes repaired AST!", payload: 'AST Validated -> Node 9' },
+        { node: "n9", title: "Node 9 runs EXPLAIN -> detects missing LIMIT on large result, auto-adds LIMIT 100", payload: 'Auto-appended LIMIT 100 -> Node 10' },
+        { node: "n10", title: "Node 10 executes repaired SQL on MySQL 8.0 -> Success!", payload: 'ResultSet returned -> Node 11' },
+        { node: "n11", title: "Node 11 delivers verified answer to User via FastAPI & Streamlit", payload: 'Self-correction succeeded without bothering the user!' }
+      ]
+    };
+
+    let currentScenario = "ambiguous";
+    let stepIndex = -1;
+    let playTimer = null;
+
+    function selectNodeCard(nodeKey) {
+      const info = NODE_DETAILS[nodeKey];
+      if (!info) return;
+
+      document.querySelectorAll(".arch-node").forEach(el => {
+        el.classList.remove("selected-node");
+      });
+      const targetEl = document.querySelector(`[data-node="${nodeKey}"]`);
+      if (targetEl) {
+        targetEl.classList.add("selected-node");
+      }
+
+      document.getElementById("insp-badge").textContent = info.badge;
+      document.getElementById("insp-title").textContent = info.title;
+      document.getElementById("insp-file").textContent = info.file;
+      document.getElementById("insp-desc").textContent = info.desc;
+      document.getElementById("insp-input").textContent = info.input;
+      document.getElementById("insp-output").textContent = info.output;
+      document.getElementById("insp-interview").textContent = `"${info.interview}"`;
+    }
+
+    function renderSimulationStep() {
+      const steps = SCENARIOS[currentScenario];
+      document.querySelectorAll(".arch-node").forEach(el => el.classList.remove("active-step"));
+
+      if (stepIndex < 0 || stepIndex >= steps.length) {
+        document.getElementById("trace-step-badge").textContent = `READY (${steps.length} STEPS)`;
+        document.getElementById("trace-step-title").textContent =
+          'Click "Simulate Flow" or "Next Step →" to trace the request from User → FastAPI → LangGraph → MySQL → User.';
+        return;
+      }
+
+      const step = steps[stepIndex];
+      document.getElementById("trace-step-badge").textContent = `STEP ${stepIndex + 1} / ${steps.length}`;
+      document.getElementById("trace-step-title").textContent = step.title;
+      document.getElementById("trace-payload-preview").textContent = `Payload: ${step.payload}`;
+
+      const activeEl = document.querySelector(`[data-node="${step.node}"]`);
+      if (activeEl) {
+        activeEl.classList.add("active-step");
+      }
+      selectNodeCard(step.node);
+    }
+
+    function stopSimulation() {
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      document.getElementById("play-icon").textContent = "▶";
+      document.getElementById("play-label").textContent = "Simulate Flow";
+    }
+
+    function toggleSimulation() {
+      if (playTimer) {
+        stopSimulation();
+        return;
+      }
+      const steps = SCENARIOS[currentScenario];
+      if (stepIndex >= steps.length - 1) {
+        stepIndex = -1;
+      }
+      document.getElementById("play-icon").textContent = "⏸";
+      document.getElementById("play-label").textContent = "Pause";
+
+      stepIndex += 1;
+      renderSimulationStep();
+
+      playTimer = setInterval(() => {
+        if (stepIndex < steps.length - 1) {
+          stepIndex += 1;
+          renderSimulationStep();
+        } else {
+          stopSimulation();
+        }
+      }, 1600);
+    }
+
+    function setScenario(scenKey) {
+      stopSimulation();
+      currentScenario = scenKey;
+      stepIndex = 0;
+
+      const btnMap = {
+        ambiguous: "btn-scenario-ambiguous",
+        clean: "btn-scenario-clean",
+        retry: "btn-scenario-retry"
+      };
+      Object.entries(btnMap).forEach(([k, id]) => {
+        const btn = document.getElementById(id);
+        if (k === scenKey) {
+          btn.className = "px-2.5 py-1 rounded-md font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40 transition";
+        } else {
+          btn.className = "px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-slate-200 transition";
+        }
+      });
+
+      renderSimulationStep();
+    }
+
+    function updateLayerFilters() {
+      const showUi = document.getElementById("filter-ui").checked;
+      const showApi = document.getElementById("filter-api").checked;
+      const showLlm = document.getElementById("filter-llm").checked;
+      const showGuard = document.getElementById("filter-guard").checked;
+
+      document.querySelectorAll(".arch-node").forEach(el => {
+        const layer = el.getAttribute("data-layer");
+        const visible =
+          (layer === "ui" && showUi) ||
+          (layer === "api" && showApi) ||
+          (layer === "llm" && showLlm) ||
+          (layer === "guard" && showGuard);
+        el.classList.toggle("dimmed", !visible);
+      });
+    }
+
+    // Wire all event listeners
+    document.querySelectorAll(".arch-node").forEach(el => {
+      el.addEventListener("click", () => {
+        stopSimulation();
+        const key = el.getAttribute("data-node");
+        selectNodeCard(key);
+      });
+    });
+
+    document.getElementById("btn-scenario-ambiguous").addEventListener("click", () => setScenario("ambiguous"));
+    document.getElementById("btn-scenario-clean").addEventListener("click", () => setScenario("clean"));
+    document.getElementById("btn-scenario-retry").addEventListener("click", () => setScenario("retry"));
+
+    document.getElementById("btn-play-pause").addEventListener("click", toggleSimulation);
+    document.getElementById("btn-step").addEventListener("click", () => {
+      stopSimulation();
+      const steps = SCENARIOS[currentScenario];
+      stepIndex = (stepIndex + 1) % steps.length;
+      renderSimulationStep();
+    });
+    document.getElementById("btn-reset").addEventListener("click", () => {
+      stopSimulation();
+      stepIndex = -1;
+      renderSimulationStep();
+      selectNodeCard("n3");
+    });
+
+    ["filter-ui", "filter-api", "filter-llm", "filter-guard"].forEach(id => {
+      document.getElementById(id).addEventListener("change", updateLayerFilters);
+    });
+  </script>
+</body>
+</html>
