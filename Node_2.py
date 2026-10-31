@@ -276,7 +276,7 @@ class SchemaAndValueLinker:
 
     def __init__(
         self,
-        registry_path: Union[str, Path] = "semantic_registry.yaml",
+        registry_path: Union[str, Path] = "sematic_registry.yaml",
         mysql_url: Optional[str] = None,
         table_catalog: Optional[Dict[str, Dict[str, Any]]] = None,
         mock_db_values: Optional[Dict[str, List[str]]] = None,
@@ -311,7 +311,9 @@ class SchemaAndValueLinker:
         for tbl, meta in self.table_catalog.items():
             embed_str = meta.get("embedding_text") or meta.get("description", "")
             synonyms_str = ", ".join(meta.get("synonyms", []))
-            cols_str = ", ".join(meta.get("columns", {}).keys())
+            cols_str = "; ".join(
+                f"{col} ({desc})" for col, desc in meta.get("columns", {}).items()
+            )
             documents.append(
                 f"{embed_str} Synonyms: {synonyms_str}. Columns: {cols_str}."
             )
@@ -336,7 +338,7 @@ class SchemaAndValueLinker:
 
         candidate_tables: List[str] = []
 
-        # 1. ChromaDB vector search if available
+        # 1. ChromaDB vector search (Takes 5ms, scales to thousands of tables)
         if self.chroma_collection and search_text.strip():
             results = self.chroma_collection.query(
                 query_texts=[search_text],
@@ -346,19 +348,7 @@ class SchemaAndValueLinker:
                 if tbl_id not in candidate_tables:
                     candidate_tables.append(tbl_id)
 
-        # 2. Deterministic synonym & column keyword matching
-        for tbl_name, meta in self.table_catalog.items():
-            synonyms = [s.lower() for s in meta.get("synonyms", [])]
-            col_names = [c.lower() for c in meta.get("columns", {}).keys()]
-            if (
-                tbl_name.lower() in search_text
-                or any(syn in search_text for syn in synonyms)
-                or any(col in search_text for col in col_names)
-            ):
-                if tbl_name not in candidate_tables:
-                    candidate_tables.append(tbl_name)
-
-        # 3. Check entity_value_lookup tables for active filters
+        # 2. Check entity_value_lookup tables for active filters (Safety check)
         entity_lookup = self.registry.get("entity_value_lookup", {})
         for f in spec.filters:
             col_key = f.field_or_dimension.lower().strip()
@@ -367,7 +357,7 @@ class SchemaAndValueLinker:
                 if tbl and tbl not in candidate_tables:
                     candidate_tables.append(tbl)
 
-        # 4. Auto-include bridge table `order_items` if both `orders`/`customers` and `products` are needed
+        # 3. Auto-include bridge table `order_items` if both `orders`/`customers` and `products` are needed
         if "products" in candidate_tables and (
             "orders" in candidate_tables or "customers" in candidate_tables
         ):
@@ -377,14 +367,12 @@ class SchemaAndValueLinker:
                 candidate_tables.append("order_items")
 
         return candidate_tables or ["customers", "orders"]
-     # --------------------------------------------------------------------------
+    
     # STEP 2B: CHECK ENTITY FILTER VALUES IN MYSQL (SQLAlchemy or Mock Fallback)
-    # --------------------------------------------------------------------------
     def verify_filter_values(self, spec: QuerySpec) -> Dict[str, List[str]]:
         """Runs parameterized MySQL LIKE queries for `entity_value_lookup` filters."""
         entity_lookup = self.registry.get("entity_value_lookup", {})
         db_lookup_results: Dict[str, List[str]] = {}
-
         for f in spec.filters:
             col_key = f.field_or_dimension.lower().strip()
             if col_key not in entity_lookup:
@@ -462,7 +450,7 @@ class SchemaAndValueLinker:
 def schema_linker_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """LangGraph Node 2 wrapper."""
     linker = SchemaAndValueLinker(
-        registry_path=state.get("registry_path", "semantic_registry.yaml"),
+        registry_path=state.get("registry_path", "sematic_registry.yaml"),
         mysql_url=state.get("mysql_url"),
     )
     return linker.link(state["query_spec"])
@@ -471,8 +459,8 @@ def schema_linker_node(state: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     from ambiguity_detector import AmbiguityDetector
 
-    linker = SchemaAndValueLinker("semantic_registry.yaml")
-    detector = AmbiguityDetector("semantic_registry.yaml")
+    linker = SchemaAndValueLinker("sematic_registry.yaml")
+    detector = AmbiguityDetector("sematic_registry.yaml")
 
     print("=" * 72)
     print("NODE 2 -> NODE 3 PIPELINE TEST (With Rich DEFAULT_TABLE_CATALOG)")
