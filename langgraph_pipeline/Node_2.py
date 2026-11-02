@@ -272,16 +272,23 @@ DEFAULT_TABLE_CATALOG: Dict[str, Dict[str, Any]] = {
 }
 
 
+DEFAULT_REGISTRY_PATH = Path(__file__).parent / "sematic_registry.yaml"
+
+
 class SchemaAndValueLinker:
 
     def __init__(
         self,
-        registry_path: Union[str, Path] = "sematic_registry.yaml",
+        registry_path: Union[str, Path] = DEFAULT_REGISTRY_PATH,
         mysql_url: Optional[str] = None,
         table_catalog: Optional[Dict[str, Dict[str, Any]]] = None,
         mock_db_values: Optional[Dict[str, List[str]]] = None,
     ):
-        self.registry_path = Path(registry_path)
+        p = Path(registry_path)
+        if not p.exists() and (Path(__file__).parent / p.name).exists():
+            self.registry_path = Path(__file__).parent / p.name
+        else:
+            self.registry_path = p
         with open(self.registry_path, "r") as f:
             self.registry : Dict[str, Any] = yaml.safe_load(f)
         self.mysql_url = mysql_url

@@ -8,9 +8,15 @@ from QuerySpec import AmbiguityFlag, FilterCondition, OrderBySpec, QuerySpec
 # into QuerySpec, locks in exact SQL expressions, adds required tables/filters,
 # clears resolved ambiguity flags, and prepares the spec for Node 7 (SQL Generator).
 
+DEFAULT_REGISTRY_PATH = Path(__file__).parent / "sematic_registry.yaml"
+
 class SpecResolver:
-    def __init__(self , registry_path: Union[str, Path] = "sematic_registry.yaml"):
-        self.registry_path = Path(registry_path)
+    def __init__(self, registry_path: Union[str, Path] = DEFAULT_REGISTRY_PATH):
+        p = Path(registry_path)
+        if not p.exists() and (Path(__file__).parent / p.name).exists():
+            self.registry_path = Path(__file__).parent / p.name
+        else:
+            self.registry_path = p
         with open(self.registry_path, "r", encoding="utf-8") as f:
             self.registry: Dict[str, Any] = yaml.safe_load(f) or {}
 
