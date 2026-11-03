@@ -88,7 +88,7 @@ class AmbiguityDetector:
 
 
         #2. Check UNDEFINED_METRIC (e.g., "active", "top", "churned")
-        filter_values = [f.value.lower().strip() for f in spec.filters]
+        filter_values = [str(f.value).lower().strip() for f in spec.filters if f.value is not None]
         all_items = filter_values + search_terms
         for rule_key, rule in self.registry.get("undefined_metric", {}).items():
             synonyms = [s.lower() for s in rule.get("synonyms", [])]
