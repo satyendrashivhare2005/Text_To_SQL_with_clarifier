@@ -14,18 +14,26 @@ def _to_dict(item: Any) -> Dict[str, Any]:
         return item.dict()
     return dict(item)
 
-DEFAULT_REGISTRY_PATH = Path(__file__).parent / "sematic_registry.yaml"
+def find_registry_file(path_input: Optional[Union[str, Path]] = None) -> Path:
+    candidates = []
+    if path_input:
+        p = Path(path_input)
+        candidates.extend([p, Path(__file__).parent / p.name])
+    pkg_dir = Path(__file__).parent
+    candidates.extend([
+        pkg_dir / "sematic_registry.yaml",
+        pkg_dir / "semantic_registry.yaml",
+        Path("sematic_registry.yaml"),
+        Path("semantic_registry.yaml"),
+    ])
+    for c in candidates:
+        if c.exists():
+            return c
+    return pkg_dir / "sematic_registry.yaml"
 
 class AmbiguityDetector:   
     def __init__(self, registry_path: Optional[Union[str, Path]] = None):
-        if registry_path is None:
-            self.registry_path = DEFAULT_REGISTRY_PATH
-        else:
-            p = Path(registry_path)
-            if not p.exists() and (Path(__file__).parent / p.name).exists():
-                self.registry_path = Path(__file__).parent / p.name
-            else:
-                self.registry_path = p
+        self.registry_path = find_registry_file(registry_path)
         if not self.registry_path.exists():
             raise FileNotFoundError(f"Registry file not found at {self.registry_path}")
         self.registry = self._load_registry()

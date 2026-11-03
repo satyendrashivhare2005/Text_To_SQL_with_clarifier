@@ -1,0 +1,244 @@
+
+version: "1.0"
+dialect: "mysql"
+database_name: "ecommerce_analytics"
+
+# 1. SAFE DEFAULTS & GLOBAL GUARDRAILS
+# Applied automatically without triggering LangGraph interrupt(), but logged in
+# QuerySpec.assumptions_made so Node 11 (Result Formatter) explains them.
+# ------------------------------------------------------------------------------
+safe_defaults:
+  default_row_limit: 100
+  max_explain_estimated_rows: 50000
+  default_sort_direction: "DESC"
+  global_table_filters:
+    orders:
+      sql_condition: "orders.order_status NOT IN ('cancelled', 'refunded')"
+      explanation: "Excluded cancelled and refunded orders by default"
+    customers:
+      sql_condition: "customers.is_deleted = 0"
+      explanation: "Excluded soft-deleted customer records"
+
+# ------------------------------------------------------------------------------
+# 2. COLUMN COLLISIONS (Ambiguity Type: COLUMN_COLLISION)
+# Triggered when an extracted metric, filter, or dimension term maps to >1
+# physical columns or formulas across the MySQL schema.
+# ------------------------------------------------------------------------------
+column_collisions:
+  revenue:
+    synonyms: ["revenue", "sales", "total sales", "income", "order value"]
+    ambiguity_type: "COLUMN_COLLISION"
+    clarification_prompt: "How would you like to calculate revenue?"
+    options:
+      gross_revenue:
+        label: "Gross Revenue (before discounts & tax)"
+        sql_expression: "SUM(orders.gross_amount)"
+        required_tables: ["orders"]
+      net_revenue:
+        label: "Net Revenue (after discounts, excluding tax)"
+        sql_expression: "SUM(orders.gross_amount - orders.discount_amount)"
+        required_tables: ["orders"]
+      collected_revenue:
+        label: "Collected Cash (paid invoices only)"
+        sql_expression: "SUM(payments.paid_amount)"
+        required_tables: ["orders", "payments"]
+        extra_filter: "payments.payment_status = 'settled'"
+
+  order_date:
+    synonyms: ["date", "order date", "month", "quarter", "year", "period", "when"]
+    ambiguity_type: "COLUMN_COLLISION"
+    applies_to_tables: ["orders"]
+    clarification_prompt: "Which date column should I use to filter or group orders?"
+    options:
+      created_at:
+        label: "Order Placement Date (when checkout occurred)"
+        sql_column: "orders.created_at"
+      paid_at:
+        label: "Payment Clearance Date (when payment succeeded)"
+        sql_column: "orders.paid_at"
+      shipped_at:
+        label: "Shipment Date (when order left warehouse)"
+        sql_column: "orders.shipped_at"
+
+  location:
+    synonyms: ["location", "country", "region", "city", "state"]
+    ambiguity_type: "COLUMN_COLLISION"
+    clarification_prompt: "Should I use the customer's billing address or the order's shipping address?"
+    options:
+      billing_country:
+        label: "Customer Billing Location"
+        sql_column: "customers.billing_country"
+        required_tables: ["customers"]
+      shipping_country:
+        label: "Order Shipping Destination"
+        sql_column: "orders.shipping_country"
+        required_tables: ["orders"]
+
+# ------------------------------------------------------------------------------
+# 3. UNDEFINED BUSINESS METRICS (Ambiguity Type: UNDEFINED_METRIC)
+# Triggered when the user uses a domain/business adjective ("active", "top",
+# "churned", "high value") that has multiple valid SQL interpretations.
+# ------------------------------------------------------------------------------
+undefined_metrics:
+  active_customer:
+    synonyms: ["active", "active customers", "active users", "current customers"]
+    ambiguity_type: "UNDEFINED_METRIC"
+    clarification_prompt: "What definition of 'active customer' should I apply?"
+    options:
+      account_flag:
+        label: "Account Status Enabled (is_active = 1)"
+        sql_filter: "customers.is_active = 1"
+        required_tables: ["customers"]
+      recent_purchase_30d:
+        label: "Placed at least 1 order in the last 30 days"
+        sql_filter: "orders.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
+        required_tables: ["customers", "orders"]
+      recent_purchase_90d:
+        label: "Placed at least 1 order in the last 90 days"
+        sql_filter: "orders.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)"
+        required_tables: ["customers", "orders"]
+
+  top_ranking:
+    synonyms: ["top", "best", "highest", "biggest", "leading", "most valuable"]
+    ambiguity_type: "UNDEFINED_METRIC"
+    requires_explicit_metric: true
+    clarification_prompt: "Which metric should I use to rank the top results?"
+    options:
+      by_net_revenue:
+        label: "Total Net Revenue"
+        sql_expression: "SUM(orders.gross_amount - orders.discount_amount)"
+        required_tables: ["orders"]
+      by_gross_revenue:
+        label: "Total Gross Revenue"
+        sql_expression: "SUM(orders.gross_amount)"
+        required_tables: ["orders"]
+      by_order_count:
+        label: "Total Number of Orders"
+        sql_expression: "COUNT(DISTINCT orders.order_id)"
+        required_tables: ["orders"]
+      by_profit_margin:
+        label: "Net Profit (Revenue minus COGS)"
+        sql_expression: "SUM(orders.gross_amount - orders.discount_amount - orders.cogs_amount)"
+        required_tables: ["orders"]
+
+  churned:
+    synonyms: ["churn", "churned", "lost customers", "inactive"]
+    ambiguity_type: "UNDEFINED_METRIC"
+    clarification_prompt: "How would you like to define churned customers?"
+    options:
+      cancelled_subscription:
+        label: "Explicitly cancelled subscription status"
+        sql_filter: "customers.subscription_status = 'cancelled'"
+      no_orders_90d:
+        label: "No orders placed in the past 90 days"
+        sql_filter: "MAX(orders.created_at) < DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)"
+
+# ------------------------------------------------------------------------------
+# 4. MANDATORY FILTER RULES (Ambiguity Type: MISSING_FILTER)
+# Triggered when a query targets a high-volume table without a required time
+# boundary or uses vague relative time phrases ("recently", "this period").
+# ------------------------------------------------------------------------------
+missing_filter_rules:
+  large_tables_requiring_date_filter:
+    orders:
+      estimated_rows: 2500000
+      date_columns: ["orders.created_at", "orders.paid_at", "orders.shipped_at"]
+      ambiguity_type: "MISSING_FILTER"
+      clarification_prompt: "The `orders` table is large. Which time period should I filter by?"
+      suggested_options:
+        last_7_days:
+          label: "Last 7 days"
+          sql_template: "{date_col} >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)"
+        last_30_days:
+          label: "Last 30 days"
+          sql_template: "{date_col} >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
+        last_quarter:
+          label: "Last calendar quarter"
+          sql_template: "{date_col} >= DATE_SUB(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 3 MONTH)"
+        year_to_date:
+          label: "Year to date (current year)"
+          sql_template: "{date_col} >= DATE_FORMAT(CURRENT_DATE(), '%Y-01-01')"
+
+  vague_time_phrases:
+    triggers: ["recently", "lately", "soon", "current period", "this period", "recent"]
+    ambiguity_type: "MISSING_FILTER"
+    clarification_prompt: "What exact timeframe do you mean by '{trigger_word}'?"
+    options:
+      last_7_days:
+        label: "Past 7 days"
+        sql_interval: "INTERVAL 7 DAY"
+      last_30_days:
+        label: "Past 30 days"
+        sql_interval: "INTERVAL 30 DAY"
+      current_month:
+        label: "Current calendar month"
+        sql_interval: "CURRENT_MONTH"
+
+# ------------------------------------------------------------------------------
+# 5. ENTITY & ENUM VALUE LINKING (Ambiguity Types: VALUE_NOT_FOUND, MULTIPLE_INTERPRETATIONS)
+# Used by Node 2 (Schema Linker) & Node 3 (Ambiguity Detector) to validate
+# extracted filter values against actual MySQL column values.
+# ------------------------------------------------------------------------------
+entity_value_lookup:
+  customer_tier:
+    table: "customers"
+    column: "customer_tier"
+    match_strategy: "exact_enum"
+    allowed_values: ["Enterprise", "Mid-Market", "SMB", "Starter"]
+    synonym_map:
+      premium: ["Enterprise", "Mid-Market"]
+      vip: ["Enterprise"]
+      small: ["SMB", "Starter"]
+    on_multiple_matches:
+      ambiguity_type: "MULTIPLE_INTERPRETATIONS"
+      clarification_prompt: "The term '{user_value}' maps to multiple customer tiers in the database. Which tier(s) should I include?"
+    on_zero_matches:
+      ambiguity_type: "VALUE_NOT_FOUND"
+      clarification_prompt: "I couldn't find '{user_value}' in `customer_tier`. Valid tiers are: Enterprise, Mid-Market, SMB, or Starter. Which one did you mean?"
+
+  company_name:
+    table: "customers"
+    column: "company_name"
+    match_strategy: "mysql_like"
+    lookup_query: "SELECT DISTINCT company_name FROM customers WHERE company_name LIKE CONCAT('%', :val, '%') LIMIT 5;"
+    on_multiple_matches:
+      ambiguity_type: "MULTIPLE_INTERPRETATIONS"
+      clarification_prompt: "Multiple customer records match '{user_value}': {matched_db_values}. Which specific company (or all of them) should I include?"
+    on_zero_matches:
+      ambiguity_type: "VALUE_NOT_FOUND"
+      clarification_prompt: "No company matching '{user_value}' was found in the customers table. Please check the spelling or provide an exact company name."
+
+  product_category:
+    table: "products"
+    column: "category_name"
+    match_strategy: "mysql_like"
+    lookup_query: "SELECT DISTINCT category_name FROM products WHERE category_name LIKE CONCAT('%', :val, '%') LIMIT 5;"
+    on_multiple_matches:
+      ambiguity_type: "MULTIPLE_INTERPRETATIONS"
+      clarification_prompt: "'{user_value}' matches multiple product categories: {matched_db_values}. Which category would you like to filter on?"
+    on_zero_matches:
+      ambiguity_type: "VALUE_NOT_FOUND"
+      clarification_prompt: "No product category matching '{user_value}' exists in the database."
+
+# ------------------------------------------------------------------------------
+# 6. SCHEMA JOINS & FOREIGN KEY PATHS
+# Used by Node 7 (SQL Generator) and Node 8 (SQLGlot AST Validator) to prevent
+# missing JOIN conditions or Cartesian products.
+# ------------------------------------------------------------------------------
+canonical_joins:
+  - left_table: "customers"
+    right_table: "orders"
+    join_type: "INNER JOIN"
+    on_condition: "customers.customer_id = orders.customer_id"
+  - left_table: "orders"
+    right_table: "order_items"
+    join_type: "INNER JOIN"
+    on_condition: "orders.order_id = order_items.order_id"
+  - left_table: "order_items"
+    right_table: "products"
+    join_type: "INNER JOIN"
+    on_condition: "order_items.product_id = products.product_id"
+  - left_table: "orders"
+    right_table: "payments"
+    join_type: "LEFT JOIN"
+    on_condition: "orders.order_id = payments.order_id"

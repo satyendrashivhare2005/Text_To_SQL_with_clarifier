@@ -272,23 +272,34 @@ DEFAULT_TABLE_CATALOG: Dict[str, Dict[str, Any]] = {
 }
 
 
-DEFAULT_REGISTRY_PATH = Path(__file__).parent / "sematic_registry.yaml"
+def find_registry_file(path_input: Optional[Union[str, Path]] = None) -> Path:
+    candidates = []
+    if path_input:
+        p = Path(path_input)
+        candidates.extend([p, Path(__file__).parent / p.name])
+    pkg_dir = Path(__file__).parent
+    candidates.extend([
+        pkg_dir / "sematic_registry.yaml",
+        pkg_dir / "semantic_registry.yaml",
+        Path("sematic_registry.yaml"),
+        Path("semantic_registry.yaml"),
+    ])
+    for c in candidates:
+        if c.exists():
+            return c
+    return pkg_dir / "sematic_registry.yaml"
 
 
 class SchemaAndValueLinker:
 
     def __init__(
         self,
-        registry_path: Union[str, Path] = DEFAULT_REGISTRY_PATH,
+        registry_path: Optional[Union[str, Path]] = None,
         mysql_url: Optional[str] = None,
         table_catalog: Optional[Dict[str, Dict[str, Any]]] = None,
         mock_db_values: Optional[Dict[str, List[str]]] = None,
     ):
-        p = Path(registry_path)
-        if not p.exists() and (Path(__file__).parent / p.name).exists():
-            self.registry_path = Path(__file__).parent / p.name
-        else:
-            self.registry_path = p
+        self.registry_path = find_registry_file(registry_path)
         with open(self.registry_path, "r") as f:
             self.registry : Dict[str, Any] = yaml.safe_load(f)
         self.mysql_url = mysql_url

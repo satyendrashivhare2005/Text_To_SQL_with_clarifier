@@ -99,21 +99,27 @@ NODE_7_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-DEFAULT_REGISTRY_PATH = Path(__file__).parent / "sematic_registry.yaml"
+def find_registry_file(path_input: Optional[Union[str, Path]] = None) -> Path:
+    candidates = []
+    if path_input:
+        p = Path(path_input)
+        candidates.extend([p, Path(__file__).parent / p.name])
+    pkg_dir = Path(__file__).parent
+    candidates.extend([
+        pkg_dir / "sematic_registry.yaml",
+        pkg_dir / "semantic_registry.yaml",
+        Path("sematic_registry.yaml"),
+        Path("semantic_registry.yaml"),
+    ])
+    for c in candidates:
+        if c.exists():
+            return c
+    return pkg_dir / "sematic_registry.yaml"
 
 
-def load_canonical_joins(registry_path: Union[str, Path] = DEFAULT_REGISTRY_PATH) -> str:
+def load_canonical_joins(registry_path: Optional[Union[str, Path]] = None) -> str:
     """Extracts canonical join paths from sematic_registry.yaml."""
-    path = Path(registry_path)
-    if not path.exists():
-        p_alt = Path(__file__).parent / path.name
-        if p_alt.exists():
-            path = p_alt
-        else:
-            alt_path = Path("semantic_registry.yaml")
-            if alt_path.exists():
-                path = alt_path
-
+    path = find_registry_file(registry_path)
     with open(path, "r", encoding="utf-8") as f:
         reg = yaml.safe_load(f) or {}
 
