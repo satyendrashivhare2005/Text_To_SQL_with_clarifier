@@ -69,7 +69,8 @@ class AmbiguityDetector:
                 search_terms.append(order_term)
         
         # 1. Check COLUMN_COLLISION (e.g., "revenue", "order_date", "location")
-        for rule_key, rule in self.registry.get("column_collision", {}).items():
+        col_collision_rules = self.registry.get("column_collisions") or self.registry.get("column_collision") or {}
+        for rule_key, rule in col_collision_rules.items():
             synonyms = [s.lower() for s in rule.get("synonyms", [])]
             matched_terms = [t for t in search_terms if t in synonyms]
 
@@ -80,17 +81,20 @@ class AmbiguityDetector:
                     for opt_key, opt_val in rule.get("options", {}).items()
                 }
                 ambiguities.append(AmbiguityFlag(
-                    ambiguity_type="column_collisions",
+                    ambiguity_type="COLUMN_COLLISION",
                     trigger_term = matched_terms[0],
                     clarification_prompt=rule.get("clarification_prompt", "Please clarify the term."),
                     options=options_dict
                 ))
 
 
-        #2. Check UNDEFINED_METRIC (e.g., "active", "top", "churned")
+        # 2. Check UNDEFINED_METRIC (e.g., "active", "top", "churned")
         filter_values = [str(f.value).lower().strip() for f in spec.filters if f.value is not None]
-        all_items = filter_values + search_terms
-        for rule_key, rule in self.registry.get("undefined_metric", {}).items():
+        filter_fields = [str(f.field_or_dimension).lower().strip() for f in spec.filters]
+        raw_words = [w.lower().strip("?,. '\"") for w in (spec.raw_question or "").split()]
+        all_items = filter_values + filter_fields + search_terms + raw_words
+        undefined_rules = self.registry.get("undefined_metrics") or self.registry.get("undefined_metric") or {}
+        for rule_key, rule in undefined_rules.items():
             synonyms = [s.lower() for s in rule.get("synonyms", [])]
             matched_terms = [t for t in all_items if t in synonyms]
 
@@ -100,7 +104,7 @@ class AmbiguityDetector:
                     for opt_key, opt_val in rule.get("options", {}).items()
                 }
                 ambiguities.append(AmbiguityFlag(
-                    ambiguity_type="undefined_metric",
+                    ambiguity_type="UNDEFINED_METRIC",
                     trigger_term=matched_terms[0],
                     clarification_prompt=rule.get("clarification_prompt", "Please clarify the term."),
                     options=options_dict
@@ -109,10 +113,7 @@ class AmbiguityDetector:
 
         missing_rules = self.registry.get("missing_filter_rules", {}) #Check MISSING_FILTER (large tables without date range or vague time)
 
-        #3a. Vague time phrase check ("recently", "this period")
-        vague_time = missing_rules.get("vague_time_phrases", {})
-
-              # 3a. Vague time phrase check ("recently", "this period")
+        # 3a. Vague time phrase check ("recently", "this period")
         vague_time = missing_rules.get("vague_time_phrases", {})
 
         if spec.time_window and vague_time:
@@ -142,15 +143,17 @@ class AmbiguityDetector:
                     )
                 )
 
-
-
         # 3b. Large table queried with no time_window
         large_tables = missing_rules.get("large_tables_requiring_date_filter", {})
+        spec_entities = [e.lower().strip() for e in spec.entities]
+        genuinely_queried = set(spec_entities) if spec_entities else set(active_tables)
+
         for table_name, table_rule in large_tables.items():
             if (
-                table_name in active_tables
+                table_name.lower() in genuinely_queried
                 and not spec.time_window
                 and f"{table_name}_date_filter" not in spec.resolved_choices
+                and table_name not in spec.resolved_choices
             ):
                 options_dict = {
                     k: v["label"]
